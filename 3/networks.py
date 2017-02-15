@@ -6,12 +6,14 @@ import matplotlib.pyplot as plt
 import time
 import seaborn as sns
 import pandas as pd
+from providers import AugmentedMSD10DataProvider,AugmentedMSD25DataProvider
+import pickle
 seed = 123
 rng = np.random.RandomState(seed)
 
-class Simulation(object):
+class Model(object):
     
-    def __init__(self,layers=1,num_hidden=200,lr=1e-4,num_epochs=10,provider=0,out=1):
+    def __init__(self,layers=2,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1):
         if provider == 0:
             self.train_data = MSD10GenreDataProvider('train', batch_size=50, rng=rng)
             self.valid_data = MSD10GenreDataProvider('valid', batch_size=50, rng=rng)
@@ -25,7 +27,11 @@ class Simulation(object):
         self.num_epochs = num_epochs
         self.lr = lr
         self.out = out
-        self.title = 'N = ' + str(self.num_hidden) + ', L = ' + str(self.layers) +', LR = ' + str(self.lr)
+        if provider == 0:
+            self.MSD = 'MSD10 '
+        else:
+            self.MSD = 'MSD25 '
+        self.title = self.MSD + 'N = ' + str(self.num_hidden) + ', L = ' + str(self.layers) +', LR = ' + str(self.lr)
         with tf.name_scope('fc-layer-1'):
             hidden_1 = self.fully_connected_layer(self.inputs,self.train_data.inputs.shape[1],self.num_hidden)
         if layers>1:
@@ -78,11 +84,14 @@ class Simulation(object):
             self.errv[0,e]=(valid_error)
             self.acct[0,e]=(running_accuracy)
             self.accv[0,e]=(valid_accuracy)
-            self.avg_time,self.min_err=np.mean(times),np.min(valid_error)
+        self.avg_time,self.min_err,self.max_acc=np.mean(times),np.min(self.errv),np.max(self.accv)
         if self.out==1:
+            self.basic_plot()
+            
+    def basic_plot(self):
             fig, (ax_1, ax_2) = plt.subplots(1, 2,figsize=(10,4))
-            print('{0:s} Done! Avg. Epoch Time: {1:.2f} Best Val. Error: {2:.2f}'.format(
-                    self.title,self.avg_time,self.min_err))
+            print('{0:s} Done! Avg. Epoch Time: {1:.2f}s, Best Val. Error: {2:.2f}, Best Val. Accuracy: {3:.2f}'.format(
+                    self.title,self.avg_time,self.min_err,self.max_acc))
             for d,k in zip([self.errt[0,:],self.errv[0,:]],['err(train)', 'err(valid)']):
                 ax_1.plot(np.arange(1, self.num_epochs+1), 
                           d, label=k)
@@ -97,7 +106,7 @@ class Simulation(object):
             ax_2.set_ylabel('accuracy')
             ax_2.legend(loc=0)
             fig.suptitle(self.title)
-            
+    
     def fully_connected_layer(self,inputs,input_dim,output_dim,nonlinearity=tf.nn.relu):
         weights = tf.Variable(
             tf.truncated_normal(
@@ -118,7 +127,7 @@ class Simulation(object):
         hiddens = tf.contrib.slim.stack(outputs, tf.contrib.slim.fully_connected,[self.num_hidden]*n)
         return hiddens
 
-class SimpleSimulation(Simulation):
+class SimpleModel(Model):
     
     def __init__(self,layers=1,num_hidden=200,lr=1e-4,num_epochs=10,provider=0,out=1):
         super().__init__(layers,num_hidden,lr,num_epochs,provider,out)
@@ -136,8 +145,20 @@ class SimpleSimulation(Simulation):
             self.train_step = tf.train.AdamOptimizer(self.lr).minimize(self.error)
             
         self.init = tf.global_variables_initializer()
+        
+class AugmentedSimpleModel(SimpleModel):
+    
+    def __init__(self,layers=1,num_hidden=200,lr=1e-4,num_epochs=10,provider=0,out=1,
+                 frac=0.15,std=0.05):
+        super().__init__(layers,num_hidden,lr,num_epochs,provider,out)
+        self.frac=frac
+        self.std=std
+        if self.provider == 0:
+            self.train_data = AugmentedMSD10DataProvider('train', batch_size=50, rng=rng,frac=self.frac,std=self.std)
+        else:
+            self.train_data = AugmentedMSD25DataProvider('train', batch_size=50, rng=rng,frac=self.frac,std=self.std)
 
-class RegSimulation(Simulation):
+class RegModel(Model):
     
     def __init__(self,layers=1,num_hidden=200,lr=1e-4,num_epochs=10,provider=0,out=1,
                  reg=1,rc=1e-3):
@@ -146,19 +167,19 @@ class RegSimulation(Simulation):
         self.rc = rc
         self.learning_functions()
         if reg == 1:
-            self.title = 'L2 Coeff = '+ str(self.rc)
+            self.title = self.MSD + 'L2 Coeff = ' + str(self.rc)
         else:
-            self.title = 'L2 Coeff = ' + str(self.rc)
+            self.title = self.MSD + 'L1 Coeff = ' + str(self.rc)
     
     def learning_functions(self):
         vars   = tf.trainable_variables()
-        if self.reg==1:
+        if self.reg==1:#l2 loss
             with tf.name_scope('error'):
                 regloss = tf.add_n([ tf.nn.l2_loss(v) for v in vars
                                    if 'biases' not in v.name ]) * self.rc
-        else:
+        else:#l1 loss
             with tf.name_scope('error'):
-                regloss = tf.add_n([ tf.nn.l1_loss(v) for v in vars
+                regloss = tf.add_n([ tf.reduce_sum(tf.abs(v)) for v in vars
                                    if 'biases' not in v.name ]) * self.rc
         self.error = tf.reduce_mean(regloss +
             tf.nn.softmax_cross_entropy_with_logits(self.outputs, self.targets))
@@ -171,11 +192,31 @@ class RegSimulation(Simulation):
             
         self.init = tf.global_variables_initializer()
         
+class AugmentedRegModel(RegModel):
+    
+    def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1,
+                 reg=1,rc=1e-3,fraction=0.15,std=0.01):
+        super().__init__(layers,num_hidden,lr,num_epochs,provider,out,reg,rc)
+        self.fraction=fraction
+        self.std=std
+        self.title = self.title + ', NL = ' + str(self.std) + ', AL = ' + str(self.fraction*100) + '%'
+        if provider == 0:
+            self.train_data = AugmentedMSD10DataProvider('train', batch_size=50, rng=rng,fraction=self.fraction,std=self.std)
+        else:
+            self.train_data = AugmentedMSD25DataProvider('train', batch_size=50, rng=rng,fraction=self.fraction,std=self.std)
+        
 class MultiPlot(object):
-    def __init__(self,sims):
+    def __init__(self,sims,labels):
         self.sims = sims
         self.d1 = len(sims[0][:])
         self.d2 = len(sims[:][0])
+        self.labels = labels
+        self.times = np.zeros([self.d1,self.d2])
+        self.errs = np.zeros([self.d1,self.d2])
+        self.accs = np.zeros([self.d1,self.d2])
+        for k in range(self.d1):
+            for j in range(self.d2):
+                self.times[k][j],self.errs[k][j],self.accs[k][j]=self.sims[k][j].avg_time,np.min(self.sims[k][j].errv),np.max(self.sims[k][j].accv)
     
     def err_grid(self):
         fig, axarr = plt.subplots(self.d1, self.d2,figsize=(16,8))
@@ -189,6 +230,7 @@ class MultiPlot(object):
                     plt.setp(axarr[k,j].get_xticklabels(), visible=False)
                 else:
                     axarr[k][j].set_xlabel('epoch')
+        axarr[0,0].legend(loc=0)
     
     def acc_grid(self):
         fig, axarr = plt.subplots(self.d1, self.d2,figsize=(16,8))
@@ -206,16 +248,41 @@ class MultiPlot(object):
         axarr[0,0].legend(loc=0)
         
     def time_heat(self,rs,cs):
-        times = np.zeros([self.d1,self.d2])
+        rs = [str(rs[i]) for i in range(self.d1)]
+        cs = [str(cs[i]) for i in range(self.d2)]
+        times = pd.DataFrame(self.times,index=rs,columns=cs)
+        fig = sns.heatmap(times, annot=True)
+        fig.set(xlabel=self.labels[0], ylabel=self.labels[1])
+
+    def err_heat(self,rs,cs):
+        rs = [str(rs[i]) for i in range(self.d1)]
+        cs = [str(cs[i]) for i in range(self.d2)]
+        errs = pd.DataFrame(self.errs,index=rs,columns=cs)
+        fig = sns.heatmap(errs, annot=True)
+        fig.set(xlabel=self.labels[0], ylabel=self.labels[1])
+        
+    def acc_heat(self,rs,cs):
+        rs = [str(rs[i]) for i in range(self.d1)]
+        cs = [str(cs[i]) for i in range(self.d2)]
+        accs = pd.DataFrame(self.accs,index=rs,columns=cs)
+        fig = sns.heatmap(accs, annot=True)
+        fig.set(xlabel=self.labels[0], ylabel=self.labels[1])
+    
+    def save_object(self,filename):
+        the_big_tensor = numpy.zeros([self.d1,self.d2,3,self.sims[0][0].num_epochs)
         for k in range(self.d1):
             for j in range(self.d2):
-                times[k,j]=self.sims[k][j].avg_time
-        times = pd.DataFrame(times)
-        rs = [str(rs(i)) for i in range(self.d1)]
-        cs = [str(cs(i)) for i in range(self.d2)]
-        times = pd.DataFrame(times,index=rs)
-        times = pd.DataFrame(times,columns=cs)
-        fig = sns.heatmap(times, annot=True, fmt="d")
+                the_big_tensor[k,j,0,:] = self.sims[k][j].times
+                the_big_tensor[k,j,1,:] = self.sims[k][j].errv
+                the_big_tensor[k,j,2,:] = self.sims[k][j].accv
+        np.save('/home/james/Models/'+filename,the_big_tensor)
                 
-                
-                
+
+class DataLoader(object):
+    def __init__(self,filename,labels):
+        self.the_big_tensor = np.load('/home/james/Models/'+filename)
+        for k in range(self.d1):
+            for j in range(self.d2):
+                self.times[k][j],self.errs[k][j],self.accs[k][j] = self.the_big_tensor[k,j,0,:],self.the_big_tensor[k,j,1,:],self.the_big_tensor[k,j,2,:]
+        
+               

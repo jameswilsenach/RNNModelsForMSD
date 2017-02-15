@@ -1,0 +1,119 @@
+import os
+import numpy as np
+seed = 123
+rng = np.random.RandomState(seed)
+from mlp.data_providers import *
+
+class MSD10AutoencoderDataProvider(MSD10GenreDataProvider):
+    """Simple wrapper data provider for training an autoencoder on MNIST with salt and pepper."""    
+    def __init__(self, which_set='train', batch_size=100, max_num_batches=-1,
+                 shuffle_order=True, rng=rng,std=0.05):
+        """Create a new augmented MNIST data provider object.
+
+        Args:
+            which_set: One of 'train', 'valid' or 'test'. Determines which
+                portion of the MNIST data this object should provide.
+            batch_size (int): Number of data points to include in each batch.
+            max_num_batches (int): Maximum number of batches to iterate over
+                in an epoch. If `max_num_batches * batch_size > num_data` then
+                only as many batches as the data can be split into will be
+                used. If set to -1 all of the data will be used.
+            shuffle_order (bool): Whether to randomly permute the order of
+                the data before each epoch.
+            rng (RandomState): A seeded random number generator.
+            transformer: Function which takes an `inputs` array of shape
+                (batch_size, input_dim) corresponding to a batch of input
+                images and a `rng` random number generator object (i.e. a
+                call signature `transformer(inputs, rng)`) and applies a
+                potentiall random set of transformations to some / all of the
+                input images as each new batch is returned when iterating over
+                the data provider.
+        """
+        super().__init__(
+            which_set, batch_size, max_num_batches, shuffle_order, rng)
+        self.std=std
+        
+    def next(self):
+        """Returns next data batch or raises `StopIteration` if at end."""
+        inputs_batch, targets_batch = super().next()
+        inputs_batch = inputs_batch + np.random.normal(0, self.std, inputs_batch.shape,self.rng)
+        
+            # return inputs as targets for autoencoder training
+        return inputs_batch, targets_batch
+
+class AutoencoderAugmentedMNISTDataProvider(MNISTDataProvider):
+    """Data provider for MNIST dataset which transforms images using a variety of possible autoencoders (potentially) trained with added noise"""
+
+    def __init__(self, which_set='train', batch_size=50, max_num_batches=-1,
+                 shuffle_order=True, rng=None, transformer=None,linear=True,aug_dim=100,num_epochs=40,
+                 fraction=0.25,learning_rate=1e-3,saltNpepper=False,salt=0.05,pepper=0.05):
+        """Create a new augmented MNIST data provider object.
+
+        Args:
+            which_set: One of 'train', 'valid' or 'test'. Determines which
+                portion of the MNIST data this object should provide.
+            batch_size (int): Number of data points to include in each batch.
+            max_num_batches (int): Maximum number of batches to iterate over
+                in an epoch. If `max_num_batches * batch_size > num_data` then
+                only as many batches as the data can be split into will be
+                used. If set to -1 all of the data will be used.
+            shuffle_order (bool): Whether to randomly permute the order of
+                the data before each epoch.
+            rng (RandomState): A seeded random number generator.
+            transformer: Function which takes an `inputs` array of shape
+                (batch_size, input_dim) corresponding to a batch of input
+                images and a `rng` random number generator object (i.e. a
+                call signature `transformer(inputs, rng)`) and applies a
+                potentiall random set of transformations to some / all of the
+                input images as each new batch is returned when iterating over
+                the data provider.
+        """
+        super(AutoencoderAugmentedMNISTDataProvider, self).__init__(
+            which_set, batch_size, max_num_batches, shuffle_order, rng)
+        self.transformer = transformer
+        self.aug_dim = aug_dim
+        self.fraction = fraction
+        self.linear = linear
+        self.learng_rate = learning_rate
+        self.saltNpepper=saltNpepper
+        self.salt=salt
+        self.pepper=pepper
+
+        # Set up a logger object to print info about the training run to stdout
+        if self.transformer==None:
+            logger = logging.getLogger()
+            logger.setLevel(logging.INFO)
+            logger.handlers = [logging.StreamHandler()]
+            valid_data = MNISTAutoencoderDataProvider('valid', batch_size=50, rng=rng)
+            train_data = MNISTAutoencoderDataProvider('train', batch_size=50, rng=rng,saltNpepper=self.saltNpepper,salt=self.salt,pepper=self.pepper)
+            
+            self.aemodel = makeAEmodel(self.linear,hidden_dim=self.aug_dim)            
+            error = SumOfSquaredDiffsError()
+                
+            learning_rule = learning_rules.GradientDescentLearningRule(learning_rate=self.learng_rate)
+            data_monitors={'acc': lambda y, t: (y.argmax(-1) == t.argmax(-1)).mean()}
+            optimiser = optimisers.Optimiser(
+            self.aemodel, error, learning_rule, train_data, valid_data, data_monitors)
+            stats, keys, run_time = optimiser.train(num_epochs=num_epochs, stats_interval=stats_interval)
+            self.transformer=self.encode
+#        print self.inputs.shape
+#        print np.concatenate((self.inputs,self.inputs[:int(round(self.fraction*(self.targets.shape[0]))),:])).shape
+        self.inputs = np.concatenate((self.inputs,self.inputs[:int(round(self.fraction*(self.targets.shape[0]))),:]))
+        self.targets = np.concatenate((self.targets,self.targets[:int(round(self.fraction*(self.targets.shape[0])))]))
+        self._update_num_batches()
+        self.shuffle_order = shuffle_order
+        self._current_order = np.arange(self.inputs.shape[0])
+    
+    def encode(self,inputs_batch):
+        if np.random.choice(2,size=(1,1),p=(self.fraction,1-self.fraction))[0][0]:
+            return self.aemodel.fprop(inputs_batch)[-1]
+        else:
+            return inputs_batch
+        
+
+    def next(self):
+        """Returns next data batch or raises `StopIteration` if at end."""
+        inputs_batch, targets_batch = super(
+            AutoencoderAugmentedMNISTDataProvider, self).next()
+        transformed_inputs_batch = self.transformer(inputs_batch)
+        return transformed_inputs_batch, targets_batch
