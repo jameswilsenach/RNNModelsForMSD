@@ -1,4 +1,3 @@
-import os
 import tensorflow as tf
 import numpy as np
 from mlp.data_providers import MSD10GenreDataProvider,MSD25GenreDataProvider
@@ -6,8 +5,7 @@ import matplotlib.pyplot as plt
 import time
 import seaborn as sns
 import pandas as pd
-from providers import AugmentedMSD10DataProvider,AugmentedMSD25DataProvider
-import pickle
+from providers import NoisyMSD10DataProvider,NoisyMSD25DataProvider,DropOutMSD10DataProvider,DropOutMSD25DataProvider
 seed = 123
 rng = np.random.RandomState(seed)
 
@@ -50,7 +48,7 @@ class Model(object):
         self.errt = np.zeros([1,self.num_epochs])
         self.accv = np.zeros([1,self.num_epochs])
         self.errv = np.zeros([1,self.num_epochs])
-        times = np.zeros([1,self.num_epochs])
+        self.times = np.zeros([1,self.num_epochs])
         for e in range(self.num_epochs):
             start_time = time.time()
             running_error = 0.
@@ -65,7 +63,7 @@ class Model(object):
                 running_accuracy += batch_acc
             end_time=time.time()
             run_time=end_time-start_time
-            times[0,e]=run_time
+            self.times[0,e]=run_time
             running_error /= self.train_data.num_batches
             running_accuracy /= self.train_data.num_batches
             
@@ -84,7 +82,7 @@ class Model(object):
             self.errv[0,e]=(valid_error)
             self.acct[0,e]=(running_accuracy)
             self.accv[0,e]=(valid_accuracy)
-        self.avg_time,self.min_err,self.max_acc=np.mean(times),np.min(self.errv),np.max(self.accv)
+        self.avg_time,self.min_err,self.max_acc=np.mean(self.times),np.min(self.errv),np.max(self.accv)
         if self.out==1:
             self.basic_plot()
             
@@ -129,7 +127,7 @@ class Model(object):
 
 class SimpleModel(Model):
     
-    def __init__(self,layers=1,num_hidden=200,lr=1e-4,num_epochs=10,provider=0,out=1):
+    def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1):
         super().__init__(layers,num_hidden,lr,num_epochs,provider,out)
         self.learning_functions()
 
@@ -146,21 +144,33 @@ class SimpleModel(Model):
             
         self.init = tf.global_variables_initializer()
         
-class AugmentedSimpleModel(SimpleModel):
+class NoisySimpleModel(SimpleModel):
     
-    def __init__(self,layers=1,num_hidden=200,lr=1e-4,num_epochs=10,provider=0,out=1,
-                 frac=0.15,std=0.05):
+    def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1,
+                 fraction=0.15,std=0.05):
         super().__init__(layers,num_hidden,lr,num_epochs,provider,out)
-        self.frac=frac
+        self.fraction = fraction
         self.std=std
         if self.provider == 0:
-            self.train_data = AugmentedMSD10DataProvider('train', batch_size=50, rng=rng,frac=self.frac,std=self.std)
+            self.train_data = NoisyMSD10DataProvider('train', batch_size=50, rng=rng,fraction=self.fraction,std=self.std)
         else:
-            self.train_data = AugmentedMSD25DataProvider('train', batch_size=50, rng=rng,frac=self.frac,std=self.std)
+            self.train_data = NoisyMSD25DataProvider('train', batch_size=50, rng=rng,fraction=self.fraction,std=self.std)
+
+class DropOutSimpleModel(SimpleModel):
+    
+    def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1,
+                 fraction=0.15,pdrop=0.1):
+        super().__init__(layers,num_hidden,lr,num_epochs,provider,out)
+        self.fraction=fraction
+        self.pdrop=pdrop
+        if self.provider == 0:
+            self.train_data = DropOutMSD10DataProvider('train', batch_size=50, rng=rng,frac=self.fraction,pdrop=self.pdrop)
+        else:
+            self.train_data = DropOutMSD25DataProvider('train', batch_size=50, rng=rng,frac=self.fraction,pdrop=self.pdrop)
 
 class RegModel(Model):
     
-    def __init__(self,layers=1,num_hidden=200,lr=1e-4,num_epochs=10,provider=0,out=1,
+    def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1,
                  reg=1,rc=1e-3):
         super().__init__(layers,num_hidden,lr,num_epochs,provider,out)
         self.reg = reg
@@ -192,7 +202,7 @@ class RegModel(Model):
             
         self.init = tf.global_variables_initializer()
         
-class AugmentedRegModel(RegModel):
+class NoisyRegModel(RegModel):
     
     def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1,
                  reg=1,rc=1e-3,fraction=0.15,std=0.01):
@@ -201,10 +211,22 @@ class AugmentedRegModel(RegModel):
         self.std=std
         self.title = self.title + ', NL = ' + str(self.std) + ', AL = ' + str(self.fraction*100) + '%'
         if provider == 0:
-            self.train_data = AugmentedMSD10DataProvider('train', batch_size=50, rng=rng,fraction=self.fraction,std=self.std)
+            self.train_data = NoisyMSD10DataProvider('train', batch_size=50, rng=rng,fraction=self.fraction,std=self.std)
         else:
-            self.train_data = AugmentedMSD25DataProvider('train', batch_size=50, rng=rng,fraction=self.fraction,std=self.std)
-        
+            self.train_data = NoisyMSD25DataProvider('train', batch_size=50, rng=rng,fraction=self.fraction,std=self.std)
+
+class DropOutRegModel(RegModel):
+    
+    def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1,
+                 reg=1,rc=1e-3,fraction=0.15,pdrop=0.1):
+        super().__init__(layers,num_hidden,lr,num_epochs,provider,out,reg,rc)
+        self.fraction=fraction
+        self.pdrop=pdrop
+        if provider == 0:
+            self.train_data = DropOutMSD10DataProvider('train', batch_size=50, rng=rng,fraction=self.fraction,pdrop=self.pdrop)
+        else:
+            self.train_data = DropOutMSD25DataProvider('train', batch_size=50, rng=rng,fraction=self.fraction,pdrop=self.pdrop)
+            
 class MultiPlot(object):
     def __init__(self,sims,labels):
         self.sims = sims
@@ -268,8 +290,8 @@ class MultiPlot(object):
         fig = sns.heatmap(accs, annot=True)
         fig.set(xlabel=self.labels[0], ylabel=self.labels[1])
     
-    def save_object(self,filename):
-        the_big_tensor = numpy.zeros([self.d1,self.d2,3,self.sims[0][0].num_epochs)
+    def save(self,filename):
+        the_big_tensor = np.zeros([self.d1,self.d2,3,self.sims[0][0].num_epochs])
         for k in range(self.d1):
             for j in range(self.d2):
                 the_big_tensor[k,j,0,:] = self.sims[k][j].times
