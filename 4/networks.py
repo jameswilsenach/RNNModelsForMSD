@@ -128,7 +128,7 @@ class Model(object):
 class SimpleModel(Model):
 
     def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1):
-        super(SimpleModel,self).__init__(layers,num_hidden,lr,num_epochs,provider,out)
+        super(SimpleModel).__init__(layers,num_hidden,lr,num_epochs,provider,out)
         self.learning_functions()
 
     def learning_functions(self):
@@ -148,7 +148,7 @@ class NoisySimpleModel(SimpleModel):
 
     def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1,
                  fraction=0.15,std=0.05):
-        super(NoisySimpleModel,self).__init__(layers,num_hidden,lr,num_epochs,provider,out)
+        super(NoisySimpleModel).__init__(layers,num_hidden,lr,num_epochs,provider,out)
         self.fraction = fraction
         self.std=std
         if self.provider == 0:
@@ -160,7 +160,7 @@ class DropOutSimpleModel(SimpleModel):
 
     def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1,
                  fraction=0.15,pdrop=0.1):
-        super(DropOutSimpleModel,self).__init__(layers,num_hidden,lr,num_epochs,provider,out)
+        super(DropOutSimpleModel).__init__(layers,num_hidden,lr,num_epochs,provider,out)
         self.fraction=fraction
         self.pdrop=pdrop
         if self.provider == 0:
@@ -172,7 +172,7 @@ class RegModel(Model):
 
     def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1,
                  reg=1,rc=1e-3):
-        super(RegModel,self).__init__(layers,num_hidden,lr,num_epochs,provider,out)
+        super(RegModel).__init__(layers,num_hidden,lr,num_epochs,provider,out)
         self.reg = reg
         self.rc = rc
         self.learning_functions()
@@ -206,7 +206,7 @@ class NoisyRegModel(RegModel):
 
     def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1,
                  reg=1,rc=1e-3,fraction=0.15,std=0.01):
-        super(NoisyRegModel,self).__init__(layers,num_hidden,lr,num_epochs,provider,out,reg,rc)
+        super(NoisyRegModel).__init__(layers,num_hidden,lr,num_epochs,provider,out,reg,rc)
         self.fraction=fraction
         self.std=std
         self.title = self.title + ', NL = ' + str(self.std) + ', AL = ' + str(self.fraction*100) + '%'
@@ -219,7 +219,7 @@ class DropOutRegModel(RegModel):
 
     def __init__(self,layers=1,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1,
                  reg=1,rc=1e-3,fraction=0.15,pdrop=0.1):
-        super(DropOutRegModel,self).__init__(layers,num_hidden,lr,num_epochs,provider,out,reg,rc)
+        super(DropOutRegModel).__init__(layers,num_hidden,lr,num_epochs,provider,out,reg,rc)
         self.fraction=fraction
         self.pdrop=pdrop
         if provider == 0:
@@ -238,7 +238,8 @@ class MultiPlot(object):
         self.accs = np.zeros([self.d1,self.d2])
         for k in range(self.d1):
             for j in range(self.d2):
-                self.times[k][j],self.errs[k][j],self.accs[k][j]=self.sims[k][j].avg_time,np.min(self.sims[k][j].errv),np.max(self.sims[k][j].accv)
+                self.times[k][j],self.errs[k][j],self.accs[k][j]=self.sims[k][j].avg_time,
+                np.min(self.sims[k][j].errv),np.max(self.sims[k][j].accv)
 
     def err_grid(self):
         fig, axarr = plt.subplots(self.d1, self.d2,figsize=(16,8))
