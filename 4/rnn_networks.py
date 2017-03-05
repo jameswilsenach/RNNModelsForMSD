@@ -1,4 +1,5 @@
 import tensorflow as tf
+import os
 import numpy as np
 from mlp.data_providers import MSD10GenreDataProvider,MSD25GenreDataProvider
 import matplotlib.pyplot as plt
@@ -12,7 +13,7 @@ step_dim = 25
 seed = 123
 batch_size = 50
 rng = np.random.RandomState(seed)
-
+directory = '../../saved_models/'
 class RNN_Model(object):
     
     def __init__(self,layers=2,num_hidden=200,lr=1e-3,num_epochs=10,provider=0,out=1,lam=1e-3):
@@ -49,15 +50,15 @@ class RNN_Model(object):
        
     def RNN_layer(self,inputs,nonlinearity=tf.nn.relu):
         inputs = tf.transpose(inputs, [1, 0, 2])
-        inputs = tf.reshape(inputs, [-1, step_dim])
-        inputs = tf.split(0,step_dim,inputs)
+        inputs = tf.reshape(inputs, [-1,step_dim])
+        inputs = tf.split(0,time_steps,inputs)
         lstm_cell = rnn_cell.BasicLSTMCell(self.num_hidden, forget_bias=1.0)
         with tf.name_scope('lstm'):
             outputs, states = rnn.rnn(lstm_cell, inputs, dtype=tf.float32)
         weights = tf.Variable(
             tf.truncated_normal(
                 [self.num_hidden, self.num_hidden], stddev=2. / (self.num_hidden*2)**0.5,seed=123),
-            'weights')
+            'weights_rec')
         biases = tf.Variable(tf.zeros([self.num_hidden]), 'biases')
         outputs = nonlinearity(tf.matmul(outputs[-1], weights) + biases)
         return outputs
@@ -66,7 +67,7 @@ class RNN_Model(object):
         weights = tf.Variable(
             tf.truncated_normal(
                 [input_dim, output_dim], stddev=2. / (input_dim + output_dim)**0.5,seed=123),
-            'weights')
+            'weights_norm')
         biases = tf.Variable(tf.zeros([output_dim]), 'biases')
         outputs = nonlinearity(tf.matmul(inputs, weights) + biases)
         return outputs
@@ -152,6 +153,12 @@ class RNN_Model(object):
             ax_2.set_ylabel('accuracy')
             ax_2.legend(loc=0)
             fig.suptitle(self.title)
+    
+    def save_data(self,filename):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        big_tensor = np.array([self.acct,self.errt,self.accv,self.acct,self.times])
+        np.save(directory+filename,big_tensor)
 
 class NoisyRNN_Model(RNN_Model):
 
@@ -218,7 +225,6 @@ class MultiPlot(object):
                     plt.setp(axarr[k,j].get_xticklabels(), visible=False)
                 else:
                     axarr[k][j].set_xlabel('epoch')
-
         axarr[0,0].legend(loc=0)
 
     def time_heat(self,rs,cs):
@@ -242,19 +248,21 @@ class MultiPlot(object):
         fig = sns.heatmap(accs, annot=True)
         fig.set(xlabel=self.labels[0], ylabel=self.labels[1])
 
-    def save(self,filename):
+    def save_data(self,filename):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
         the_big_tensor = np.zeros([self.d1,self.d2,3,self.sims[0][0].num_epochs])
         for k in range(self.d1):
             for j in range(self.d2):
                 the_big_tensor[k,j,0,:] = self.sims[k][j].times
                 the_big_tensor[k,j,1,:] = self.sims[k][j].errv
                 the_big_tensor[k,j,2,:] = self.sims[k][j].accv
-        np.save('/home/james/Models/'+filename,the_big_tensor)
+        np.save(directory+filename,the_big_tensor)
 
 
 class DataLoader(object):
     def __init__(self,filename,labels):
-        self.the_big_tensor = np.load('/home/james/Models/'+filename)
+        self.the_big_tensor = np.load(filename)
         for k in range(self.d1):
             for j in range(self.d2):
                 self.times[k][j],self.errs[k][j],self.accs[k][j] = self.the_big_tensor[k,j,0,:],self.the_big_tensor[k,j,1,:],self.the_big_tensor[k,j,2,:]
