@@ -44,11 +44,11 @@ class Model(object):
     def run_session(self):
         sess = tf.Session()
         sess.run(self.init)
-        self.acct = np.zeros([1,self.num_epochs])
-        self.errt = np.zeros([1,self.num_epochs])
-        self.accv = np.zeros([1,self.num_epochs])
-        self.errv = np.zeros([1,self.num_epochs])
-        self.times = np.zeros([1,self.num_epochs])
+        self.acct = np.zeros(self.num_epochs)
+        self.errt = np.zeros(self.num_epochs)
+        self.accv = np.zeros(self.num_epochs)
+        self.errv = np.zeros(self.num_epochs)
+        self.times = np.zeros(self.num_epochs)
         for e in range(self.num_epochs):
             start_time = time.time()
             running_error = 0.
@@ -63,7 +63,7 @@ class Model(object):
                 running_accuracy += batch_acc
             end_time=time.time()
             run_time=end_time-start_time
-            self.times[0,e]=run_time
+            self.times[e]=run_time
             running_error /= self.train_data.num_batches
             running_accuracy /= self.train_data.num_batches
 
@@ -78,10 +78,10 @@ class Model(object):
             if self.out==1:
                 print('End of epoch {0:02d}: err(train)={1:.2f} acc(train)={2:.2f} run_time={3:.2f}s | err(valid)={4:.2f} acc(valid)={5:.2f}'
                       .format(e + 1, running_error, running_accuracy, run_time,valid_error, valid_accuracy))
-            self.errt[0,e]=(running_error)
-            self.errv[0,e]=(valid_error)
-            self.acct[0,e]=(running_accuracy)
-            self.accv[0,e]=(valid_accuracy)
+            self.errt[e]=(running_error)
+            self.errv[e]=(valid_error)
+            self.acct[e]=(running_accuracy)
+            self.accv[e]=(valid_accuracy)
         self.avg_time,self.min_err,self.max_acc=np.mean(self.times),np.min(self.errv),np.max(self.accv)
         if self.out==1:
             self.basic_plot()
@@ -90,14 +90,14 @@ class Model(object):
             fig, (ax_1, ax_2) = plt.subplots(1, 2,figsize=(10,4))
             print('{0:s} Done! Avg. Epoch Time: {1:.2f}s, Best Val. Error: {2:.2f}, Best Val. Accuracy: {3:.2f}'.format(
                     self.title,self.avg_time,self.min_err,self.max_acc))
-            for d,k in zip([self.errt[0,:],self.errv[0,:]],['err(train)', 'err(valid)']):
+            for d,k in zip([self.errt[:],self.errv[:]],['err(train)', 'err(valid)']):
                 ax_1.plot(np.arange(1, self.num_epochs+1),
                           d, label=k)
             ax_1.set_ylabel('error',visible=True)
             ax_1.set_xlabel('epoch')
             ax_1.legend(loc=0)
 
-            for d,k in zip([self.acct[0,:],self.accv[0,:]],['acc(train)', 'acc(valid)']):
+            for d,k in zip([self.acct[:],self.accv[:]],['acc(train)', 'acc(valid)']):
                 ax_2.plot(np.arange(1, self.num_epochs+1),
                           d, label=k)
             ax_2.set_xlabel('epoch')
@@ -246,7 +246,7 @@ class MultiPlot(object):
         for k in range(self.d1):
             axarr[k,0].set_ylabel('error')
             for j in range(self.d2):
-                for d,w in zip([self.sims[k][j].errt[0,:],self.sims[k][j].errv[0,:]],['err(train)', 'err(valid)']):
+                for d,w in zip([self.sims[k][j].errt[:],self.sims[k][j].errv[:]],['err(train)', 'err(valid)']):
                     axarr[k,j].plot(np.arange(1, self.sims[k][j].num_epochs+1),
                               d, label=w)
                 if k!=self.d1-1:
@@ -260,7 +260,7 @@ class MultiPlot(object):
         for k in range(self.d1):
             axarr[k,0].set_ylabel('accuracy')
             for j in range(self.d2):
-                for d,w in zip([self.sims[k][j].acct[0,:],self.sims[k][j].accv[0,:]],['acc(train)', 'acc(valid)']):
+                for d,w in zip([self.sims[k][j].acct[:],self.sims[k][j].accv[:]],['acc(train)', 'acc(valid)']):
                     axarr[k,j].plot(np.arange(1, self.sims[k][j].num_epochs+1),
                               d, label=w)
                 if k!=self.d1-1:
