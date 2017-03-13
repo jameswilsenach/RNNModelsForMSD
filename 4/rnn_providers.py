@@ -4,11 +4,11 @@ seed = 123
 rng = np.random.RandomState(seed)
 from mlp.data_providers import MSD10GenreDataProvider, MSD25GenreDataProvider
 
-class AugmentedMSD10DataProvider(MSD10GenreDataProvider):
+class EnsembleMSD10DataProvider(MSD10GenreDataProvider):
     """Data provider for MNIST dataset which transforms images using a variety of possible autoencoders (potentially) trained with added noise"""
 
     def __init__(self, which_set='train', batch_size=50, max_num_batches=-1,
-                 shuffle_order=True, rng=rng,fraction=0.25,std=0.05,pdrop=0.2):
+                 shuffle_order=True, rng=rng,div=2):
         """Create a new augmented MNIST data provider object.
 
         Args:
@@ -30,28 +30,20 @@ class AugmentedMSD10DataProvider(MSD10GenreDataProvider):
                 input images as each new batch is returned when iterating over
                 the data provider.
         """
-        super(AugmentedMSD10DataProvider,self).__init__(
+        super(GapMSD10DataProvider,self).__init__(
             which_set, batch_size, max_num_batches, shuffle_order, rng)
-        self.fraction = fraction
-        self.std = std
-        self.pdrop = pdrop
-        inds = np.random.choice(self.targets.shape[0],int(round(self.fraction*self.targets.shape[0])))
-        aug_inputs = self.transform(np.array([self.inputs[i,:] for i in inds]))
-        self.inputs = np.concatenate([self.inputs,aug_inputs])
-        self.targets = np.concatenate([self.targets,[self.targets[i] for i in inds]])
-        self._update_num_batches()
-        self.shuffle_order = shuffle_order
-        self._current_order = np.arange(self.inputs.shape[0])
 
-    def transform(self,aug_inputs):
-        aug_inputs = np.multiply(aug_inputs,np.random.choice(2,aug_inputs.shape,p=[self.pdrop,1-self.pdrop]))
-        return aug_inputs + np.random.normal(0, self.std, aug_inputs.shape)
 
-class AugmentedMSD25DataProvider(MSD25GenreDataProvider):
+    def next(self):
+        """Returns next data batch or raises `StopIteration` if at end."""
+        inputs_batch, targets_batch = super(GapMSD10DataProvider,self).next()
+        return inputs_batch, targets_batch
+
+class GapMSD25DataProvider(MSD25GenreDataProvider):
     """Data provider for MNIST dataset which transforms images using a variety of possible autoencoders (potentially) trained with added noise"""
 
     def __init__(self, which_set='train', batch_size=50, max_num_batches=-1,
-                 shuffle_order=True, rng=rng,fraction=0.25,std=0.05,pdrop=0.2):
+                 shuffle_order=True, rng=rng,gap=range(10)):
         """Create a new augmented MNIST data provider object.
 
         Args:
@@ -73,20 +65,19 @@ class AugmentedMSD25DataProvider(MSD25GenreDataProvider):
                 input images as each new batch is returned when iterating over
                 the data provider.
         """
-        super(AugmentedMSD25DataProvider,self).__init__(
+        super(GapMSD25DataProvider,self).__init__(
             which_set, batch_size, max_num_batches, shuffle_order, rng)
-        self.fraction = fraction
-        self.std = std
-        self.pdrop = pdrop
-
-        inds = np.random.choice(self.targets.shape[0],int(round(self.fraction*self.targets.shape[0])))
-        aug_inputs = self.transform(np.array([self.inputs[i,:] for i in inds]))
-        self.inputs = np.concatenate([self.inputs,aug_inputs])
-        self.targets = np.concatenate([self.targets,[self.targets[i] for i in inds]])
-        self._update_num_batches()
-        self.shuffle_order = shuffle_order
-        self._current_order = np.arange(self.inputs.shape[0])
-
-    def transform(self,aug_inputs):
-        aug_inputs = np.multiply(aug_inputs,np.random.choice(2,aug_inputs.shape,p=[self.pdrop,1-self.pdrop]))
-        return aug_inputs + np.random.normal(0, self.std, aug_inputs.shape)
+        self.gap = gap
+        self.inputs = self.inputs.reshape(-1,120,25)
+        targets2 = self.inputs[:,self.gap,:].reshape(self.inputs.shape[0],-1)
+        print targets2.shape
+        self.targets = np.transpose(np.array([self.targets]))
+        print self.targets.shape
+        self.targets = np.concatenate([self.targets,targets2],1)
+        self.inputs = np.delete(self.inputs,self.gap,1)
+        self.inputs.reshape(self.inputs.shape[0],-1)
+        
+    def next(self):
+        """Returns next data batch or raises `StopIteration` if at end."""
+        inputs_batch, targets_batch = super(GapMSD25DataProvider,self).next()
+        return inputs_batch, targets_batch[:,0] , targets_batch[:,1:]
